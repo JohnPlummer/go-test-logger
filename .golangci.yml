@@ -34,6 +34,9 @@ linters:
             - "checkPrivateReceivers"
             - "sayRepetitiveInsteadOfStutters"
 
+    staticcheck:
+      checks: ["all", "-ST1000", "-ST1001", "-ST1016"]
+
     gosec:
       excludes:
         - G115
