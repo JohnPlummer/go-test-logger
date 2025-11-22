@@ -1,6 +1,8 @@
 module github.com/JohnPlummer/go-test-logger
 
-go 1.23.0
+go 1.24.0
+
+toolchain go1.24.5
 
 require (
 	github.com/onsi/ginkgo/v2 v2.27.2
