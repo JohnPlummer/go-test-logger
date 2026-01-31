@@ -57,9 +57,9 @@ var _ = BeforeSuite(func() {
 By default, suppresses INFO and WARN logs while showing ERROR. Control with `LOG_LEVEL` environment variable:
 
 ```bash
-LOG_LEVEL=DEBUG go test ./...  # Show all logs
-LOG_LEVEL=INFO go test ./...   # Show INFO and above
-LOG_LEVEL=ERROR go test ./...  # Show ERROR only (default)
+make test                   # Run tests (ERROR only by default)
+LOG_LEVEL=DEBUG make test   # Show all logs
+LOG_LEVEL=INFO make test    # Show INFO and above
 ```
 
 ### ExpectErrorLog
@@ -89,7 +89,7 @@ testlogger.ExpectErrorLogJSON(func(*slog.Logger) {
 
 ### WithCapturedLogger
 
-Returns a logger and buffer for manual validation. Use when you need direct access to the captured output.
+Returns a logger and buffer for manual validation. Only use when you need direct access to the buffer for custom assertions or log sequence validation.
 
 ```go
 logger, buffer := testlogger.WithCapturedLogger(slog.LevelDebug)
@@ -101,7 +101,7 @@ Expect(buffer).To(gbytes.Say("step 1"))
 Expect(buffer).To(gbytes.Say("step 2"))
 ```
 
-**Note:** Unlike `ExpectErrorLog`, this does not capture global `slog` calls. You must pass the returned logger to your code.
+**Note:** Does not capture global `slog` calls. You must pass the returned logger to your code.
 
 ### WithCapturedJSONLogger
 

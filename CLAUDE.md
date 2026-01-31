@@ -35,6 +35,8 @@ testlogger.ExpectErrorLog(func(*slog.Logger) {
 
 ### Manual Buffer Access
 
+Only use when you need direct access to the buffer for custom assertions or log sequence validation.
+
 ```go
 logger, buffer := testlogger.WithCapturedLogger(slog.LevelInfo)
 service := NewService(logger)  // must pass logger
@@ -55,9 +57,11 @@ Expect(buffer).To(gbytes.Say("started"))
 ## Commands
 
 ```bash
-go test ./...              # Run tests
-go test -cover ./...       # With coverage
-LOG_LEVEL=DEBUG go test    # Debug logging
+make test           # Run tests
+make check          # Format, lint, test
+make coverage       # Generate coverage report
+make lint           # Run linter
+LOG_LEVEL=DEBUG make test  # Debug logging
 ```
 
 ## Notes
