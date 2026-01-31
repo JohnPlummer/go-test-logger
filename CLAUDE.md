@@ -17,16 +17,12 @@ Test logging utilities for Ginkgo/Gomega BDD tests using `log/slog`.
 
 ## Two Approaches
 
-Both approaches now capture global slog calls (v1.2.0+).
-
 1. **ExpectErrorLog**: Capture and validate specific error patterns
 
    ```go
-   ExpectErrorLog(func(logger *slog.Logger) {
-       client := NewClient(logger)  // can use injected logger
-       slog.Error("or global slog") // both are captured
-       Expect(err).To(HaveOccurred())
-   }, "rate limit exceeded", "status=429")
+   ExpectErrorLog(func(_ *slog.Logger) {  // parameter can be ignored
+       slog.Error("captured automatically")
+   }, "captured automatically")
    ```
 
 2. **ConfigureTestLogging**: Suite-level log filtering by level
@@ -35,7 +31,14 @@ Both approaches now capture global slog calls (v1.2.0+).
    BeforeSuite(func() { testlogger.ConfigureTestLogging() })
    ```
 
-Use `ExpectErrorLog` when you need pattern validation. Use `ConfigureTestLogging` for general noise reduction.
+3. **WithCapturedLogger**: Manual capture (requires injection)
+
+   ```go
+   logger, buffer := WithCapturedLogger(slog.LevelError)
+   client := NewClient(logger)  // must inject - doesn't touch global
+   ```
+
+Use `ExpectErrorLog` for pattern validation. Use `WithCapturedLogger` when you need the buffer for custom assertions.
 
 ## LOG_LEVEL Environment Variable
 

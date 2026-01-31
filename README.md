@@ -238,7 +238,7 @@ This provides clean test output by default, with easy debugging when needed.
 
 ### ExpectErrorLog
 
-Runs a test function with a captured logger and validates expected error patterns.
+Runs a test function and validates expected error patterns. Captures all slog output automatically.
 
 **Signature:**
 
@@ -248,7 +248,8 @@ func ExpectErrorLog(testFunc func(*slog.Logger), expectedPatterns ...string)
 
 **Behavior:**
 
-- Captures both the injected logger AND global `slog.Error()`, `slog.Info()`, etc. calls (v1.2.0+)
+- Captures global `slog.Error()`, `slog.Info()`, etc. calls automatically (v1.2.0+)
+- Logger parameter is optional - can be ignored with `_`
 - Expected logs (matching patterns): **HIDDEN** from output
 - Unexpected logs (not matching): **SHOWN** to stderr
 - Test fails if expected patterns not found (Gomega assertion)
@@ -257,9 +258,9 @@ func ExpectErrorLog(testFunc func(*slog.Logger), expectedPatterns ...string)
 **Example:**
 
 ```go
-testlogger.ExpectErrorLog(func(logger *slog.Logger) {
-    service := NewService(logger)
-    err := service.ProcessInvalidData()
+testlogger.ExpectErrorLog(func(_ *slog.Logger) {  // parameter can be ignored
+    service := NewService()
+    err := service.ProcessInvalidData()  // uses slog.Error() internally
     Expect(err).To(HaveOccurred())
 }, "validation failed", "invalid email format")
 ```
@@ -299,6 +300,8 @@ testlogger.ExpectErrorLogJSON(func(logger *slog.Logger) {
 
 Creates a logger that writes to a buffer for manual validation.
 
+**Important:** This function does NOT modify the global slog default. You must inject the returned logger into your code under test. Global `slog.Error()` calls will not be captured.
+
 **Signature:**
 
 ```go
@@ -310,7 +313,7 @@ func WithCapturedLogger(level slog.Level) (*slog.Logger, *gbytes.Buffer)
 ```go
 logger, buffer := testlogger.WithCapturedLogger(slog.LevelDebug)
 
-service := NewService(logger)
+service := NewService(logger)  // injection required
 service.ProcessData()
 
 // Manual validation with Gomega matchers
@@ -324,6 +327,7 @@ Expect(buffer).To(gbytes.Say("count=42"))
 - Custom log validation logic
 - Complex assertions beyond pattern matching
 - Fine-grained control over log validation
+- When you need direct access to the buffer
 
 ### WithCapturedJSONLogger
 
