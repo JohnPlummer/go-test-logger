@@ -32,3 +32,16 @@ Thumbs.db
 
 # AI backup files
 .ai-backup/
+
+# Claude Code runtime directories
+.claude-cache/
+.claude-debug/
+.claude-projects/
+.claude-session-env/
+.claude-todos/
+
+# Project planning artifacts (symlink to external storage)
+thoughts/
+
+# Test results (consumed by commit-guardian)
+.test-results/

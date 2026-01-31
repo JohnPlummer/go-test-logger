@@ -1,32 +1,59 @@
-# CLAUDE.md
+# go-test-logger
 
-Configuration for Claude Code when working with go-test-logger package.
+Test logging utilities for Ginkgo/Gomega BDD tests using `log/slog`.
 
-## Standards
+**Module**: `github.com/JohnPlummer/go-test-logger`
 
-Use `/ai-common` skill to load development standards and patterns as needed.
+## Core API
 
-## Package Purpose
+| Function | Purpose |
+|----------|---------|
+| `ConfigureTestLogging()` | Suite-level global slog config (call in BeforeSuite) |
+| `ExpectErrorLog(fn, patterns...)` | Capture logs, validate patterns, hide matched output |
+| `ExpectErrorLogJSON(fn, patterns...)` | Same as above with JSON format |
+| `WithCapturedLogger(level)` | Returns `(*slog.Logger, *gbytes.Buffer)` for manual validation |
+| `WithCapturedJSONLogger(level)` | JSON variant of above |
+| `AssertNoErrorLogs(buffer)` | Assert no ERROR level logs in buffer |
 
-go-test-logger provides test logging utilities for Ginkgo/Gomega BDD tests:
+## Two Approaches
 
-- ExpectErrorLog pattern for hiding expected errors from test output
-- Log capture and validation with Gomega matchers
-- Suite-level logging configuration with environment variable support
-- JSON and text log format support
+1. **Logger Injection** (preferred): Pass captured logger to code under test
 
-## Development Guidelines
+   ```go
+   ExpectErrorLog(func(logger *slog.Logger) {
+       client := NewClient(logger)
+       err := client.CallAPI()
+       Expect(err).To(HaveOccurred())
+   }, "rate limit exceeded", "status=429")
+   ```
 
-This is a **shared package** used across multiple projects. Changes must be:
+2. **Global Logger**: Configure default slog in BeforeSuite
 
-- Backward compatible
-- Well-tested
-- Generic (not project-specific)
-- Documented in examples
+   ```go
+   BeforeSuite(func() { testlogger.ConfigureTestLogging() })
+   ```
 
-## Key Principles
+## LOG_LEVEL Environment Variable
 
-- **Clean Test Output**: Expected errors should be validated but not clutter output
-- **Easy Debugging**: LOG_LEVEL environment variable enables verbose logging
-- **Gomega Integration**: Works seamlessly with gbytes.Say() and other matchers
-- **Pattern Matching**: Flexible pattern matching for log validation
+| Value | Effect |
+|-------|--------|
+| DEBUG | All logs to stderr |
+| INFO | INFO and above |
+| WARN | WARN and above |
+| ERROR | ERROR only |
+| (unset) | Suppress INFO/WARN, show ERROR |
+
+## Commands
+
+```bash
+go test ./...              # Run tests
+go test -cover ./...       # With coverage
+go test -v ./...           # Verbose
+LOG_LEVEL=DEBUG go test    # Debug logging
+```
+
+## Shared Package Rules
+
+- All changes require tests
+- No project-specific code
+- Patterns use regex (escape special chars: `\\[`, `\\(`)

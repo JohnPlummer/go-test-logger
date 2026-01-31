@@ -87,10 +87,11 @@ lint:
 	@echo "Running linter (checks formatting and security)..."
 	@$(GOBIN)/golangci-lint run --timeout=5m ./*.go
 
-# Run all tests
+# Run all tests with JSON output for commit-guardian
 test:
 	@echo "Running all tests..."
-	@$(GINKGO) -r --timeout=3m --succinct
+	@mkdir -p .test-results
+	@$(GINKGO) -r --timeout=3m --succinct --json-report=.test-results/ginkgo-report.json
 
 # Run tests with race detection
 test-race:
