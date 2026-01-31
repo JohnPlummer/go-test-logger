@@ -185,7 +185,7 @@ testlogger.ExpectErrorLog(func(*slog.Logger) {
 
 ## Changelog
 
-### v1.2.0
+### v0.3.0
 
 `ExpectErrorLog` and `ExpectErrorLogJSON` now capture all `slog` output automatically. Code using `slog.Error()`, `slog.Info()`, etc. is captured without any setup.
 
