@@ -4,43 +4,45 @@ Test logging utilities for Ginkgo/Gomega BDD tests using `log/slog`.
 
 **Module**: `github.com/JohnPlummer/go-test-logger`
 
-## Core API
+## API
 
 | Function | Purpose |
 |----------|---------|
-| `ConfigureTestLogging()` | Suite-level global slog config (call in BeforeSuite) |
-| `ExpectErrorLog(fn, patterns...)` | Capture logs, validate patterns, hide matched output |
+| `ConfigureTestLogging()` | Suite-level log filtering (call in BeforeSuite) |
+| `ExpectErrorLog(fn, patterns...)` | Capture slog output, validate patterns, hide matched logs |
 | `ExpectErrorLogJSON(fn, patterns...)` | Same as above with JSON format |
 | `WithCapturedLogger(level)` | Returns `(*slog.Logger, *gbytes.Buffer)` for manual validation |
 | `WithCapturedJSONLogger(level)` | JSON variant of above |
 | `AssertNoErrorLogs(buffer)` | Assert no ERROR level logs in buffer |
 
-## Two Approaches
+## Usage
 
-1. **ExpectErrorLog**: Capture and validate specific error patterns
+### Suite Setup
 
-   ```go
-   ExpectErrorLog(func(_ *slog.Logger) {  // parameter can be ignored
-       slog.Error("captured automatically")
-   }, "captured automatically")
-   ```
+```go
+BeforeSuite(func() { testlogger.ConfigureTestLogging() })
+```
 
-2. **ConfigureTestLogging**: Suite-level log filtering by level
+### Validate Expected Errors
 
-   ```go
-   BeforeSuite(func() { testlogger.ConfigureTestLogging() })
-   ```
+```go
+testlogger.ExpectErrorLog(func(*slog.Logger) {
+    service := NewService()
+    err := service.Process()
+    Expect(err).To(HaveOccurred())
+}, "processing failed", "invalid input")
+```
 
-3. **WithCapturedLogger**: Manual capture (requires injection)
+### Manual Buffer Access
 
-   ```go
-   logger, buffer := WithCapturedLogger(slog.LevelError)
-   client := NewClient(logger)  // must inject - doesn't touch global
-   ```
+```go
+logger, buffer := testlogger.WithCapturedLogger(slog.LevelInfo)
+service := NewService(logger)  // must pass logger
+service.Process()
+Expect(buffer).To(gbytes.Say("started"))
+```
 
-Use `ExpectErrorLog` for pattern validation. Use `WithCapturedLogger` when you need the buffer for custom assertions.
-
-## LOG_LEVEL Environment Variable
+## LOG_LEVEL
 
 | Value | Effect |
 |-------|--------|
@@ -55,12 +57,11 @@ Use `ExpectErrorLog` for pattern validation. Use `WithCapturedLogger` when you n
 ```bash
 go test ./...              # Run tests
 go test -cover ./...       # With coverage
-go test -v ./...           # Verbose
 LOG_LEVEL=DEBUG go test    # Debug logging
 ```
 
-## Shared Package Rules
+## Notes
 
-- All changes require tests
-- No project-specific code
+- `ExpectErrorLog` captures all global slog calls automatically
+- `WithCapturedLogger` requires passing the logger to code under test
 - Patterns use regex (escape special chars: `\\[`, `\\(`)
