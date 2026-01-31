@@ -9,6 +9,7 @@ Test logging utilities for Ginkgo/Gomega BDD tests - capture and validate test l
 ## Features
 
 - **ExpectErrorLog**: Capture and validate expected error patterns, hide matching logs
+- **Global slog capture**: Captures both injected logger and global `slog.Error()` calls (v1.2.0+)
 - **ConfigureTestLogging**: Suite-level logging configuration with sensible defaults
 - **WithCapturedLogger**: Manual log capture for custom validation
 - **AssertNoErrorLogs**: Negative assertions for successful operations
@@ -115,7 +116,7 @@ This package provides two distinct approaches to test logging. Understanding whe
 
 `ExpectErrorLog` and `WithCapturedLogger` create an isolated logger that you inject into your code under test.
 
-**Requirements:** Your code must accept a `*slog.Logger` parameter.
+**Requirements:** Your code must accept a `*slog.Logger` parameter (though global slog calls are also captured).
 
 ```go
 // Your production code
@@ -142,10 +143,12 @@ It("handles errors", func() {
 - Pattern-based suppression: expected logs hidden, unexpected logs shown
 - Validation: test fails if expected patterns not found
 - No cross-test pollution
+- **Captures global slog calls** (v1.2.0+): code using `slog.Error()` directly is also captured
 
 **Limitations:**
 
-- Requires dependency injection in your production code
+- Global slog.Default() is temporarily modified during test execution
+- Parallel tests using global slog may interfere with each other
 
 ### Approach 2: Global Default Logger
 
@@ -246,9 +249,11 @@ func ExpectErrorLog(testFunc func(*slog.Logger), expectedPatterns ...string)
 
 **Behavior:**
 
+- Captures both the injected logger AND global `slog.Error()`, `slog.Info()`, etc. calls (v1.2.0+)
 - Expected logs (matching patterns): **HIDDEN** from output
 - Unexpected logs (not matching): **SHOWN** to stderr
 - Test fails if expected patterns not found (Gomega assertion)
+- Original default logger is restored after the test function completes
 
 **Example:**
 
@@ -674,6 +679,28 @@ Contributions welcome! Please ensure:
 ## License
 
 MIT License - see [LICENSE](./LICENSE) file for details.
+
+## Changelog
+
+### v1.2.0
+
+**Global slog Capture**
+
+`ExpectErrorLog` and `ExpectErrorLogJSON` now capture global slog calls (`slog.Error()`, `slog.Info()`, etc.) in addition to the injected logger. This means code that uses the default slog logger is now captured and validated.
+
+```go
+testlogger.ExpectErrorLog(func(logger *slog.Logger) {
+    // Both are now captured:
+    logger.Error("injected logger")  // captured (as before)
+    slog.Error("global slog")        // captured (new in v1.2.0)
+}, "injected logger", "global slog")
+```
+
+**Migration notes:**
+
+- Existing tests continue to work unchanged
+- Tests may now surface previously hidden global slog errors (intended behavior)
+- Parallel tests using global slog may need `-p 1` flag if interference occurs
 
 ## Related Packages
 
