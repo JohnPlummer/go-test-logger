@@ -105,6 +105,119 @@ testlogger.ExpectErrorLog(func(logger *slog.Logger) {
 - ✅ Expected "rate limit exceeded" logs: **HIDDEN** (validated silently)
 - ❌ Unexpected logs (bugs): **SHOWN** in stderr for debugging
 
+**Important:** Pattern-based suppression only works with the injection approach (`ExpectErrorLog`). The global approach (`ConfigureTestLogging`) only filters by log level, not by pattern.
+
+## Two Approaches: Injection vs Global
+
+This package provides two distinct approaches to test logging. Understanding when to use each is important.
+
+### Approach 1: Logger Injection (Recommended)
+
+`ExpectErrorLog` and `WithCapturedLogger` create an isolated logger that you inject into your code under test.
+
+**Requirements:** Your code must accept a `*slog.Logger` parameter.
+
+```go
+// Your production code
+type Client struct {
+    logger *slog.Logger
+}
+
+func NewClient(logger *slog.Logger) *Client {
+    return &Client{logger: logger}
+}
+
+// Your test
+It("handles errors", func() {
+    testlogger.ExpectErrorLog(func(logger *slog.Logger) {
+        client := NewClient(logger)  // Inject the test logger
+        client.DoSomething()
+    }, "expected error pattern")
+})
+```
+
+**Benefits:**
+
+- Per-test isolation: each test gets a fresh logger and buffer
+- Pattern-based suppression: expected logs hidden, unexpected logs shown
+- Validation: test fails if expected patterns not found
+- No cross-test pollution
+
+**Limitations:**
+
+- Requires dependency injection in your production code
+
+### Approach 2: Global Default Logger
+
+`ConfigureTestLogging` sets the global `slog.SetDefault()` logger for code that uses `slog.Info()`, `slog.Error()` directly.
+
+**Requirements:** None - works with any code using the default slog logger.
+
+```go
+// Your production code (no logger injection)
+func ProcessData() {
+    slog.Info("processing started")
+    slog.Error("something failed")
+}
+
+// Your test suite
+var _ = BeforeSuite(func() {
+    testlogger.ConfigureTestLogging()
+})
+
+It("processes data", func() {
+    ProcessData()  // Uses global logger automatically
+})
+```
+
+**Benefits:**
+
+- No code changes required
+- Works with legacy code or third-party libraries
+
+**Limitations:**
+
+- Level filtering only (hides INFO/WARN, shows ERROR)
+- No pattern-based suppression
+- No per-test log validation
+- Cannot verify specific log messages
+- Logs from all tests go to same output
+
+### Which Approach to Use?
+
+| Scenario | Approach | Why |
+|----------|----------|-----|
+| Testing your own code | Injection | Full control, validation, clean output |
+| Testing error handling paths | Injection | Pattern validation catches missing errors |
+| Testing third-party library behavior | Global | Can't inject into external code |
+| Legacy code without DI | Global | No refactoring required |
+| Verifying specific log messages | Injection | Global can't validate patterns |
+| Just want quieter test output | Global | Simple, no code changes |
+
+### Using Both Together
+
+You can combine both approaches:
+
+```go
+var _ = BeforeSuite(func() {
+    // Quiet global logs from third-party code
+    testlogger.ConfigureTestLogging()
+})
+
+It("handles API errors", func() {
+    // Inject for your code to get full validation
+    testlogger.ExpectErrorLog(func(logger *slog.Logger) {
+        client := NewClient(logger)
+        client.CallAPI()
+    }, "rate limit exceeded")
+})
+```
+
+This gives you:
+
+- Clean output from dependencies using global slog
+- Full validation for your own code via injection
+
 ### Suite-Level Configuration
 
 Configure logging once in `BeforeSuite`:
@@ -268,7 +381,9 @@ testlogger.AssertNoErrorLogs(buffer)
 
 ### ConfigureTestLogging
 
-Sets up slog for test suites with sensible defaults.
+Sets up the **global default** slog logger for test suites.
+
+**Important:** This configures the logger used by `slog.Info()`, `slog.Error()` etc. It does NOT affect loggers created by `ExpectErrorLog` or `WithCapturedLogger`, which create their own isolated loggers.
 
 **Signature:**
 
@@ -276,11 +391,18 @@ Sets up slog for test suites with sensible defaults.
 func ConfigureTestLogging()
 ```
 
-**Default behavior:**
+**What it does:**
 
-- Suppresses INFO and WARN messages
-- Shows ERROR logs to stderr for debugging
+- Filters logs by level (not by pattern)
+- Affects all code using `slog.Default()`
+- Persists for entire test suite
 - Respects LOG_LEVEL environment variable
+
+**What it doesn't do:**
+
+- Pattern-based suppression (use `ExpectErrorLog` for that)
+- Per-test isolation
+- Log validation
 
 **LOG_LEVEL values:**
 
