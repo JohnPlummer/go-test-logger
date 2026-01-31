@@ -106,17 +106,17 @@ testlogger.ExpectErrorLog(func(logger *slog.Logger) {
 - ✅ Expected "rate limit exceeded" logs: **HIDDEN** (validated silently)
 - ❌ Unexpected logs (bugs): **SHOWN** in stderr for debugging
 
-**Important:** Pattern-based suppression only works with the injection approach (`ExpectErrorLog`). The global approach (`ConfigureTestLogging`) only filters by log level, not by pattern.
+**Note:** `ExpectErrorLog` provides pattern-based validation and captures both injected and global slog calls (v1.2.0+). `ConfigureTestLogging` only filters by log level, not by pattern.
 
 ## Two Approaches: Injection vs Global
 
 This package provides two distinct approaches to test logging. Understanding when to use each is important.
 
-### Approach 1: Logger Injection (Recommended)
+### Approach 1: ExpectErrorLog (Pattern Validation)
 
-`ExpectErrorLog` and `WithCapturedLogger` create an isolated logger that you inject into your code under test.
+`ExpectErrorLog` and `WithCapturedLogger` capture logs for validation and pattern-based filtering. They capture both injected logger calls and global slog calls (v1.2.0+).
 
-**Requirements:** Your code must accept a `*slog.Logger` parameter (though global slog calls are also captured).
+**Requirements:** None - global slog calls are captured automatically. Logger injection is optional.
 
 ```go
 // Your production code
@@ -190,12 +190,11 @@ It("processes data", func() {
 
 | Scenario | Approach | Why |
 |----------|----------|-----|
-| Testing your own code | Injection | Full control, validation, clean output |
-| Testing error handling paths | Injection | Pattern validation catches missing errors |
-| Testing third-party library behavior | Global | Can't inject into external code |
-| Legacy code without DI | Global | No refactoring required |
-| Verifying specific log messages | Injection | Global can't validate patterns |
-| Just want quieter test output | Global | Simple, no code changes |
+| Validating specific error patterns | ExpectErrorLog | Pattern validation, clean output |
+| Testing error handling paths | ExpectErrorLog | Catches missing or unexpected errors |
+| Verifying specific log messages | ExpectErrorLog | Validates patterns in captured output |
+| Just want quieter test output | ConfigureTestLogging | Simple level filtering, no per-test setup |
+| Third-party library noise | ConfigureTestLogging | Reduces output without validation |
 
 ### Using Both Together
 
@@ -203,23 +202,23 @@ You can combine both approaches:
 
 ```go
 var _ = BeforeSuite(func() {
-    // Quiet global logs from third-party code
+    // Quiet global logs by default
     testlogger.ConfigureTestLogging()
 })
 
 It("handles API errors", func() {
-    // Inject for your code to get full validation
+    // ExpectErrorLog captures all slog calls (injected and global)
     testlogger.ExpectErrorLog(func(logger *slog.Logger) {
-        client := NewClient(logger)
-        client.CallAPI()
+        client := NewClient(logger)  // injection optional
+        client.CallAPI()             // global slog.Error() also captured
     }, "rate limit exceeded")
 })
 ```
 
 This gives you:
 
-- Clean output from dependencies using global slog
-- Full validation for your own code via injection
+- Clean output by default via level filtering
+- Pattern validation when you need it via ExpectErrorLog
 
 ### Suite-Level Configuration
 
