@@ -4,36 +4,47 @@ Test logging utilities for Ginkgo/Gomega BDD tests using `log/slog`.
 
 **Module**: `github.com/JohnPlummer/go-test-logger`
 
-## Core API
+## API
 
 | Function | Purpose |
 |----------|---------|
-| `ConfigureTestLogging()` | Suite-level global slog config (call in BeforeSuite) |
-| `ExpectErrorLog(fn, patterns...)` | Capture logs, validate patterns, hide matched output |
+| `ConfigureTestLogging()` | Suite-level log filtering (call in BeforeSuite) |
+| `ExpectErrorLog(fn, patterns...)` | Capture slog output, validate patterns, hide matched logs |
 | `ExpectErrorLogJSON(fn, patterns...)` | Same as above with JSON format |
 | `WithCapturedLogger(level)` | Returns `(*slog.Logger, *gbytes.Buffer)` for manual validation |
 | `WithCapturedJSONLogger(level)` | JSON variant of above |
 | `AssertNoErrorLogs(buffer)` | Assert no ERROR level logs in buffer |
 
-## Two Approaches
+## Usage
 
-1. **Logger Injection** (preferred): Pass captured logger to code under test
+### Suite Setup
 
-   ```go
-   ExpectErrorLog(func(logger *slog.Logger) {
-       client := NewClient(logger)
-       err := client.CallAPI()
-       Expect(err).To(HaveOccurred())
-   }, "rate limit exceeded", "status=429")
-   ```
+```go
+BeforeSuite(func() { testlogger.ConfigureTestLogging() })
+```
 
-2. **Global Logger**: Configure default slog in BeforeSuite
+### Validate Expected Errors
 
-   ```go
-   BeforeSuite(func() { testlogger.ConfigureTestLogging() })
-   ```
+```go
+testlogger.ExpectErrorLog(func(*slog.Logger) {
+    service := NewService()
+    err := service.Process()
+    Expect(err).To(HaveOccurred())
+}, "processing failed", "invalid input")
+```
 
-## LOG_LEVEL Environment Variable
+### Manual Buffer Access
+
+Only use when you need direct access to the buffer for custom assertions or log sequence validation.
+
+```go
+logger, buffer := testlogger.WithCapturedLogger(slog.LevelInfo)
+service := NewService(logger)  // must pass logger
+service.Process()
+Expect(buffer).To(gbytes.Say("started"))
+```
+
+## LOG_LEVEL
 
 | Value | Effect |
 |-------|--------|
@@ -46,14 +57,15 @@ Test logging utilities for Ginkgo/Gomega BDD tests using `log/slog`.
 ## Commands
 
 ```bash
-go test ./...              # Run tests
-go test -cover ./...       # With coverage
-go test -v ./...           # Verbose
-LOG_LEVEL=DEBUG go test    # Debug logging
+make test           # Run tests
+make check          # Format, lint, test
+make coverage       # Generate coverage report
+make lint           # Run linter
+LOG_LEVEL=DEBUG make test  # Debug logging
 ```
 
-## Shared Package Rules
+## Notes
 
-- All changes require tests
-- No project-specific code
+- `ExpectErrorLog` captures all global slog calls automatically
+- `WithCapturedLogger` requires passing the logger to code under test
 - Patterns use regex (escape special chars: `\\[`, `\\(`)

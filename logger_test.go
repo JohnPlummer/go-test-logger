@@ -224,6 +224,46 @@ var _ = Describe("Logger Test Utilities", func() {
 		})
 	})
 
+	Describe("Global slog capture", func() {
+		It("should capture global slog.Error calls", func() {
+			testlogger.ExpectErrorLog(func(logger *slog.Logger) {
+				slog.Error("global error message")
+			}, "global error message")
+		})
+
+		It("should capture both injected and global slog calls", func() {
+			testlogger.ExpectErrorLog(func(logger *slog.Logger) {
+				logger.Error("injected logger error")
+				slog.Error("global slog error")
+			}, "injected logger error", "global slog error")
+		})
+
+		It("should restore original default after test", func() {
+			originalDefault := slog.Default()
+
+			testlogger.ExpectErrorLog(func(logger *slog.Logger) {
+				slog.Error("test error")
+			}, "test error")
+
+			Expect(slog.Default()).To(Equal(originalDefault))
+		})
+
+		It("should capture global slog at all log levels", func() {
+			testlogger.ExpectErrorLog(func(logger *slog.Logger) {
+				slog.Error("global error level")
+				slog.Warn("global warn level")
+				slog.Info("global info level")
+			}, "global error level")
+			// Warn and Info are filtered by default log level, only Error captured
+		})
+
+		It("should work with ExpectErrorLogJSON for global calls", func() {
+			testlogger.ExpectErrorLogJSON(func(logger *slog.Logger) {
+				slog.Error("global json error", "key", "value")
+			}, `"msg":"global json error"`, `"key":"value"`)
+		})
+	})
+
 	Describe("ConfigureTestLogging", func() {
 		AfterEach(func() {
 			// Clean up environment variable after each test

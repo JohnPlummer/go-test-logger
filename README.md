@@ -1,21 +1,6 @@
 # go-test-logger
 
-Test logging utilities for Ginkgo/Gomega BDD tests - capture and validate test logs while suppressing expected error logs from test output.
-
-## Overview
-
-`go-test-logger` provides utilities for handling test logs in Ginkgo/Gomega test suites. It solves the common problem of expected error logs cluttering test output while ensuring unexpected errors remain visible for debugging.
-
-## Features
-
-- **ExpectErrorLog**: Capture and validate expected error patterns, hide matching logs
-- **ConfigureTestLogging**: Suite-level logging configuration with sensible defaults
-- **WithCapturedLogger**: Manual log capture for custom validation
-- **AssertNoErrorLogs**: Negative assertions for successful operations
-- **Pattern matching**: Validate log patterns while hiding expected output
-- **JSON support**: Full support for structured JSON log validation
-- **Gomega integration**: Works seamlessly with Gomega matchers
-- **Context-aware**: Respects LOG_LEVEL environment variable for debugging
+Test logging utilities for Ginkgo/Gomega BDD tests. Capture and validate log output while hiding expected errors from test output.
 
 ## Installation
 
@@ -34,7 +19,7 @@ import (
 
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
-    "github.com/JohnPlummer/go-test-logger"
+    testlogger "github.com/JohnPlummer/go-test-logger"
 )
 
 func TestMyPackage(t *testing.T) {
@@ -43,295 +28,84 @@ func TestMyPackage(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-    // Configure test logging - suppresses INFO/WARN, shows ERROR
     testlogger.ConfigureTestLogging()
 })
 
 var _ = Describe("API Client", func() {
-    It("should handle rate limit errors gracefully", func() {
-        // Expected errors are hidden from output, unexpected errors are shown
-        testlogger.ExpectErrorLog(func(logger *slog.Logger) {
-            client := NewClient(logger)
-            err := client.CallAPI() // Will log "rate limit exceeded"
+    It("handles rate limit errors", func() {
+        testlogger.ExpectErrorLog(func(*slog.Logger) {
+            client := NewClient()
+            err := client.CallAPI()
             Expect(err).To(HaveOccurred())
         }, "rate limit exceeded", "status=429")
     })
-
-    It("should complete successfully without errors", func() {
-        logger, buffer := testlogger.WithCapturedLogger(slog.LevelDebug)
-        client := NewClient(logger)
-
-        err := client.ProcessData()
-        Expect(err).NotTo(HaveOccurred())
-
-        // Verify no ERROR logs were produced
-        testlogger.AssertNoErrorLogs(buffer)
-    })
 })
 ```
 
-## Core Concepts
+## API
 
-### The Problem
+### ConfigureTestLogging
 
-When testing error handling code, expected error logs clutter test output making it hard to spot actual problems:
-
-```
-# Without go-test-logger
-time=2025-11-16T11:00:00.000Z level=ERROR msg="rate limit exceeded" status=429
-time=2025-11-16T11:00:01.000Z level=ERROR msg="connection timeout" retry=1
-time=2025-11-16T11:00:02.000Z level=ERROR msg="invalid token" auth=failed
-... (100 more expected errors in your test suite)
-```
-
-This noise makes it impossible to distinguish between:
-
-- **Expected errors** (part of normal test flow)
-- **Unexpected errors** (actual bugs that need attention)
-
-### The Solution
-
-`go-test-logger` filters expected errors while showing unexpected ones:
-
-```go
-testlogger.ExpectErrorLog(func(logger *slog.Logger) {
-    // Test code that produces expected error logs
-    client.CallRateLimitedAPI()
-}, "rate limit exceeded") // Pattern to hide from output
-```
-
-**Result:**
-
-- ✅ Expected "rate limit exceeded" logs: **HIDDEN** (validated silently)
-- ❌ Unexpected logs (bugs): **SHOWN** in stderr for debugging
-
-**Important:** Pattern-based suppression only works with the injection approach (`ExpectErrorLog`). The global approach (`ConfigureTestLogging`) only filters by log level, not by pattern.
-
-## Two Approaches: Injection vs Global
-
-This package provides two distinct approaches to test logging. Understanding when to use each is important.
-
-### Approach 1: Logger Injection (Recommended)
-
-`ExpectErrorLog` and `WithCapturedLogger` create an isolated logger that you inject into your code under test.
-
-**Requirements:** Your code must accept a `*slog.Logger` parameter.
-
-```go
-// Your production code
-type Client struct {
-    logger *slog.Logger
-}
-
-func NewClient(logger *slog.Logger) *Client {
-    return &Client{logger: logger}
-}
-
-// Your test
-It("handles errors", func() {
-    testlogger.ExpectErrorLog(func(logger *slog.Logger) {
-        client := NewClient(logger)  // Inject the test logger
-        client.DoSomething()
-    }, "expected error pattern")
-})
-```
-
-**Benefits:**
-
-- Per-test isolation: each test gets a fresh logger and buffer
-- Pattern-based suppression: expected logs hidden, unexpected logs shown
-- Validation: test fails if expected patterns not found
-- No cross-test pollution
-
-**Limitations:**
-
-- Requires dependency injection in your production code
-
-### Approach 2: Global Default Logger
-
-`ConfigureTestLogging` sets the global `slog.SetDefault()` logger for code that uses `slog.Info()`, `slog.Error()` directly.
-
-**Requirements:** None - works with any code using the default slog logger.
-
-```go
-// Your production code (no logger injection)
-func ProcessData() {
-    slog.Info("processing started")
-    slog.Error("something failed")
-}
-
-// Your test suite
-var _ = BeforeSuite(func() {
-    testlogger.ConfigureTestLogging()
-})
-
-It("processes data", func() {
-    ProcessData()  // Uses global logger automatically
-})
-```
-
-**Benefits:**
-
-- No code changes required
-- Works with legacy code or third-party libraries
-
-**Limitations:**
-
-- Level filtering only (hides INFO/WARN, shows ERROR)
-- No pattern-based suppression
-- No per-test log validation
-- Cannot verify specific log messages
-- Logs from all tests go to same output
-
-### Which Approach to Use?
-
-| Scenario | Approach | Why |
-|----------|----------|-----|
-| Testing your own code | Injection | Full control, validation, clean output |
-| Testing error handling paths | Injection | Pattern validation catches missing errors |
-| Testing third-party library behavior | Global | Can't inject into external code |
-| Legacy code without DI | Global | No refactoring required |
-| Verifying specific log messages | Injection | Global can't validate patterns |
-| Just want quieter test output | Global | Simple, no code changes |
-
-### Using Both Together
-
-You can combine both approaches:
-
-```go
-var _ = BeforeSuite(func() {
-    // Quiet global logs from third-party code
-    testlogger.ConfigureTestLogging()
-})
-
-It("handles API errors", func() {
-    // Inject for your code to get full validation
-    testlogger.ExpectErrorLog(func(logger *slog.Logger) {
-        client := NewClient(logger)
-        client.CallAPI()
-    }, "rate limit exceeded")
-})
-```
-
-This gives you:
-
-- Clean output from dependencies using global slog
-- Full validation for your own code via injection
-
-### Suite-Level Configuration
-
-Configure logging once in `BeforeSuite`:
+Call once in `BeforeSuite` to configure log levels for the test suite.
 
 ```go
 var _ = BeforeSuite(func() {
     testlogger.ConfigureTestLogging()
-    // By default: suppresses INFO/WARN, shows ERROR
-    // Set LOG_LEVEL=DEBUG for verbose output during debugging
 })
 ```
 
-This provides clean test output by default, with easy debugging when needed.
+By default, suppresses INFO and WARN logs while showing ERROR. Control with `LOG_LEVEL` environment variable:
 
-## API Reference
+```bash
+make test                   # Run tests (ERROR only by default)
+LOG_LEVEL=DEBUG make test   # Show all logs
+LOG_LEVEL=INFO make test    # Show INFO and above
+```
 
 ### ExpectErrorLog
 
-Runs a test function with a captured logger and validates expected error patterns.
-
-**Signature:**
+Captures all `slog` output during the test function. Validates that expected patterns appear, hides matching logs, shows unexpected logs to stderr.
 
 ```go
-func ExpectErrorLog(testFunc func(*slog.Logger), expectedPatterns ...string)
-```
-
-**Behavior:**
-
-- Expected logs (matching patterns): **HIDDEN** from output
-- Unexpected logs (not matching): **SHOWN** to stderr
-- Test fails if expected patterns not found (Gomega assertion)
-
-**Example:**
-
-```go
-testlogger.ExpectErrorLog(func(logger *slog.Logger) {
-    service := NewService(logger)
-    err := service.ProcessInvalidData()
+testlogger.ExpectErrorLog(func(*slog.Logger) {
+    service := NewService()
+    err := service.Process()
     Expect(err).To(HaveOccurred())
-}, "validation failed", "invalid email format")
+}, "processing failed", "invalid input")
 ```
 
-**When to use:**
-
-- Testing error handling code paths
-- Validating specific error log patterns
-- Hiding expected errors from test output
+The test fails if any expected pattern is not found in the log output.
 
 ### ExpectErrorLogJSON
 
-Like `ExpectErrorLog` but uses JSON output format for validating structured log fields.
-
-**Signature:**
+Same as `ExpectErrorLog` but captures JSON-formatted logs.
 
 ```go
-func ExpectErrorLogJSON(testFunc func(*slog.Logger), expectedPatterns ...string)
+testlogger.ExpectErrorLogJSON(func(*slog.Logger) {
+    service := NewService()
+    service.Process()
+}, `"level":"ERROR"`, `"msg":"failed"`, `"code":500`)
 ```
-
-**Example:**
-
-```go
-testlogger.ExpectErrorLogJSON(func(logger *slog.Logger) {
-    service := NewService(logger)
-    service.ProcessData()
-}, `"level":"ERROR"`, `"msg":"processing failed"`, `"user_id":"123"`)
-```
-
-**When to use:**
-
-- Validating structured log fields
-- Testing JSON log output
-- Verifying specific field values in logs
 
 ### WithCapturedLogger
 
-Creates a logger that writes to a buffer for manual validation.
-
-**Signature:**
-
-```go
-func WithCapturedLogger(level slog.Level) (*slog.Logger, *gbytes.Buffer)
-```
-
-**Example:**
+Returns a logger and buffer for manual validation. Only use when you need direct access to the buffer for custom assertions or log sequence validation.
 
 ```go
 logger, buffer := testlogger.WithCapturedLogger(slog.LevelDebug)
 
 service := NewService(logger)
-service.ProcessData()
+service.Process()
 
-// Manual validation with Gomega matchers
-Expect(buffer).To(gbytes.Say("processing started"))
-Expect(buffer).To(gbytes.Say("items processed"))
-Expect(buffer).To(gbytes.Say("count=42"))
+Expect(buffer).To(gbytes.Say("step 1"))
+Expect(buffer).To(gbytes.Say("step 2"))
 ```
 
-**When to use:**
-
-- Custom log validation logic
-- Complex assertions beyond pattern matching
-- Fine-grained control over log validation
+**Note:** Does not capture global `slog` calls. You must pass the returned logger to your code.
 
 ### WithCapturedJSONLogger
 
-Creates a JSON logger for validating structured log output.
-
-**Signature:**
-
-```go
-func WithCapturedJSONLogger(level slog.Level) (*slog.Logger, *gbytes.Buffer)
-```
-
-**Example:**
+Same as `WithCapturedLogger` but returns a JSON-formatted logger.
 
 ```go
 logger, buffer := testlogger.WithCapturedJSONLogger(slog.LevelInfo)
@@ -339,345 +113,82 @@ logger, buffer := testlogger.WithCapturedJSONLogger(slog.LevelInfo)
 handler := NewHandler(logger)
 handler.HandleRequest(req)
 
-Expect(buffer).To(gbytes.Say(`"request_id":"abc123"`))
-Expect(buffer).To(gbytes.Say(`"method":"POST"`))
-Expect(buffer).To(gbytes.Say(`"status":200`))
+Expect(buffer).To(gbytes.Say(`"request_id":"123"`))
 ```
-
-**When to use:**
-
-- Validating JSON log structure
-- Testing structured logging
-- Verifying JSON field values
 
 ### AssertNoErrorLogs
 
 Validates that no ERROR level logs were produced.
 
-**Signature:**
-
-```go
-func AssertNoErrorLogs(buffer *gbytes.Buffer)
-```
-
-**Example:**
-
 ```go
 logger, buffer := testlogger.WithCapturedLogger(slog.LevelDebug)
-service := NewService(logger)
 
+service := NewService(logger)
 err := service.ProcessValidData()
 Expect(err).NotTo(HaveOccurred())
 
-// Verify no ERROR logs (for both text and JSON)
 testlogger.AssertNoErrorLogs(buffer)
 ```
 
-**When to use:**
+## Examples
 
-- Testing successful code paths
-- Ensuring error-free execution
-- Negative assertions (proving absence of errors)
-
-### ConfigureTestLogging
-
-Sets up the **global default** slog logger for test suites.
-
-**Important:** This configures the logger used by `slog.Info()`, `slog.Error()` etc. It does NOT affect loggers created by `ExpectErrorLog` or `WithCapturedLogger`, which create their own isolated loggers.
-
-**Signature:**
+### Testing Error Handling
 
 ```go
-func ConfigureTestLogging()
-```
-
-**What it does:**
-
-- Filters logs by level (not by pattern)
-- Affects all code using `slog.Default()`
-- Persists for entire test suite
-- Respects LOG_LEVEL environment variable
-
-**What it doesn't do:**
-
-- Pattern-based suppression (use `ExpectErrorLog` for that)
-- Per-test isolation
-- Log validation
-
-**LOG_LEVEL values:**
-
-- `DEBUG`: Shows all logs (most verbose)
-- `INFO`: Shows INFO and above
-- `WARN`: Shows WARN and above
-- `ERROR`: Shows ERROR only
-- (default): Suppresses INFO/WARN, shows ERROR
-
-**Example:**
-
-```go
-var _ = BeforeSuite(func() {
-    testlogger.ConfigureTestLogging()
-    // Additional suite setup...
-})
-```
-
-**Shell usage:**
-
-```bash
-# Default: quiet output (ERROR only)
-ginkgo run ./...
-
-# Verbose: see all logs for debugging
-LOG_LEVEL=DEBUG ginkgo run ./pkg/client
-
-# Moderate: see INFO and above
-LOG_LEVEL=INFO ginkgo run ./...
-```
-
-## Usage Patterns
-
-### Pattern 1: Testing Error Handling
-
-When testing code that logs expected errors:
-
-```go
-It("should handle database connection errors", func() {
-    testlogger.ExpectErrorLog(func(logger *slog.Logger) {
-        repo := NewRepository(logger, invalidConfig)
-        err := repo.Connect()
+It("logs connection errors", func() {
+    testlogger.ExpectErrorLog(func(*slog.Logger) {
+        db := NewDatabase(invalidConfig)
+        err := db.Connect()
         Expect(err).To(HaveOccurred())
-    }, "connection failed", "connection refused")
+    }, "connection failed", "timeout")
 })
 ```
 
-### Pattern 2: Testing Success Paths
-
-When verifying code completes without errors:
+### Validating Log Sequence
 
 ```go
-It("should process valid data successfully", func() {
-    logger, buffer := testlogger.WithCapturedLogger(slog.LevelDebug)
-    processor := NewProcessor(logger)
+It("logs processing steps in order", func() {
+    logger, buffer := testlogger.WithCapturedLogger(slog.LevelInfo)
 
-    err := processor.Process(validData)
+    pipeline := NewPipeline(logger)
+    pipeline.Execute(data)
+
+    Expect(buffer).To(gbytes.Say("validation"))
+    Expect(buffer).To(gbytes.Say("transformation"))
+    Expect(buffer).To(gbytes.Say("persistence"))
+})
+```
+
+### Testing Success Path
+
+```go
+It("completes without errors", func() {
+    logger, buffer := testlogger.WithCapturedLogger(slog.LevelDebug)
+
+    service := NewService(logger)
+    err := service.Process(validData)
+
     Expect(err).NotTo(HaveOccurred())
     testlogger.AssertNoErrorLogs(buffer)
 })
 ```
 
-### Pattern 3: Testing Structured Logs
+## Pattern Matching
 
-When validating JSON log fields:
-
-```go
-It("should log user actions with structured data", func() {
-    testlogger.ExpectErrorLogJSON(func(logger *slog.Logger) {
-        tracker := NewTracker(logger)
-        tracker.RecordAction("login", "user123")
-    }, `"action":"login"`, `"user_id":"user123"`, `"timestamp"`)
-})
-```
-
-### Pattern 4: Custom Validation
-
-When you need fine-grained control:
+Patterns are matched using `gbytes.Say()` which supports regular expressions. Escape special characters:
 
 ```go
-It("should log processing steps in correct order", func() {
-    logger, buffer := testlogger.WithCapturedLogger(slog.LevelInfo)
-    pipeline := NewPipeline(logger)
-
-    pipeline.Execute(data)
-
-    // Validate specific log sequence
-    Expect(buffer).To(gbytes.Say("stage 1: validation"))
-    Expect(buffer).To(gbytes.Say("stage 2: transformation"))
-    Expect(buffer).To(gbytes.Say("stage 3: persistence"))
-})
-```
-
-## Best Practices
-
-### 1. Configure Logging in BeforeSuite
-
-Always configure test logging once at the suite level:
-
-```go
-var _ = BeforeSuite(func() {
-    testlogger.ConfigureTestLogging()
-})
-```
-
-**Why:**
-
-- Consistent logging behavior across all tests
-- Clean test output by default
-- Easy debugging with LOG_LEVEL environment variable
-
-### 2. Use Specific Patterns
-
-Provide specific patterns to validate exact error messages:
-
-```go
-// ✅ Good: Specific patterns
-testlogger.ExpectErrorLog(func(logger *slog.Logger) {
-    client.Connect()
-}, "connection failed", "timeout", "host=localhost")
-
-// ❌ Bad: Vague patterns
-testlogger.ExpectErrorLog(func(logger *slog.Logger) {
-    client.Connect()
-}, "error")
-```
-
-### 3. Test Both Success and Failure Paths
-
-Validate both error conditions and error-free execution:
-
-```go
-It("should handle invalid input", func() {
-    testlogger.ExpectErrorLog(func(logger *slog.Logger) {
-        // Test error path
-    }, "validation failed")
-})
-
-It("should process valid input successfully", func() {
-    logger, buffer := testlogger.WithCapturedLogger(slog.LevelDebug)
-    // Test success path
-    testlogger.AssertNoErrorLogs(buffer)
-})
-```
-
-### 4. Match Log Format to Code
-
-Use JSON validation for code that uses JSON handlers:
-
-```go
-// If your code uses slog.NewJSONHandler
-testlogger.ExpectErrorLogJSON(func(logger *slog.Logger) {
-    service.Process()
-}, `"level":"ERROR"`, `"msg":"failed"`)
-
-// If your code uses slog.NewTextHandler
-testlogger.ExpectErrorLog(func(logger *slog.Logger) {
-    service.Process()
-}, "level=ERROR", "msg=failed")
-```
-
-### 5. Escape Special Regex Characters
-
-When patterns contain regex special characters, escape them:
-
-```go
-testlogger.ExpectErrorLog(func(logger *slog.Logger) {
+testlogger.ExpectErrorLog(func(*slog.Logger) {
     parser.Parse("[invalid]")
-}, "\\[invalid\\]") // Escape brackets
+}, "\\[invalid\\]")
 ```
 
-## Migration Guide
+## Changelog
 
-### From Raw slog Testing
+### v0.3.0
 
-**Before** (logs clutter output):
-
-```go
-It("should handle errors", func() {
-    logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-    client := NewClient(logger)
-    err := client.CallAPI()
-    Expect(err).To(HaveOccurred())
-    // ERROR logs appear in test output ❌
-})
-```
-
-**After** (clean output):
-
-```go
-var _ = BeforeSuite(func() {
-    testlogger.ConfigureTestLogging()
-})
-
-It("should handle errors", func() {
-    testlogger.ExpectErrorLog(func(logger *slog.Logger) {
-        client := NewClient(logger)
-        err := client.CallAPI()
-        Expect(err).To(HaveOccurred())
-    }, "rate limit exceeded")
-    // Expected ERROR logs hidden ✅
-})
-```
-
-### From Manual Buffer Capture
-
-**Before** (verbose setup):
-
-```go
-It("should log operations", func() {
-    var buf bytes.Buffer
-    logger := slog.New(slog.NewTextHandler(&buf, nil))
-    service := NewService(logger)
-    service.Process()
-
-    output := buf.String()
-    Expect(output).To(ContainSubstring("processing"))
-})
-```
-
-**After** (concise):
-
-```go
-It("should log operations", func() {
-    logger, buffer := testlogger.WithCapturedLogger(slog.LevelInfo)
-    service := NewService(logger)
-    service.Process()
-
-    Expect(buffer).To(gbytes.Say("processing"))
-})
-```
-
-## Testing
-
-Run tests:
-
-```bash
-make test
-```
-
-Run tests with coverage:
-
-```bash
-make test-coverage
-```
-
-Run tests with race detection:
-
-```bash
-make test-race
-```
-
-Check code formatting and linting:
-
-```bash
-make check
-```
-
-## Contributing
-
-Contributions welcome! Please ensure:
-
-1. Tests pass: `make test`
-2. Coverage stays >90%: `make test-coverage`
-3. Linting passes: `make lint`
-4. Code is formatted: `make fmt`
-5. Documentation is updated
+`ExpectErrorLog` and `ExpectErrorLogJSON` now capture all `slog` output automatically. Code using `slog.Error()`, `slog.Info()`, etc. is captured without any setup.
 
 ## License
 
-MIT License - see [LICENSE](./LICENSE) file for details.
-
-## Related Packages
-
-- [Ginkgo](https://github.com/onsi/ginkgo): BDD testing framework
-- [Gomega](https://github.com/onsi/gomega): Matcher library
-- [gbytes](https://github.com/onsi/gomega/tree/master/gbytes): Buffer testing utilities
-- [slog](https://pkg.go.dev/log/slog): Structured logging (Go standard library)
+MIT

@@ -62,6 +62,11 @@ func expectErrorLogWithHandler(
 		Level: getLogLevel(),
 	}))
 
+	// Temporarily set as default to capture global slog calls
+	originalDefault := slog.Default()
+	slog.SetDefault(logger)
+	defer slog.SetDefault(originalDefault)
+
 	// Run test function with captured logger
 	testFunc(logger)
 
